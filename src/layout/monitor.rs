@@ -353,6 +353,8 @@ impl<W: LayoutElement> Monitor<W> {
 
         for ws in &mut self.workspaces {
             ws.set_output(None);
+            // Degrade static workspaces to dynamic on monitor disconnect
+            ws.set_static_id(None);
         }
 
         self.workspaces
@@ -400,6 +402,66 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn has_window(&self, window: &W::Id) -> bool {
         self.windows().any(|win| win.id() == window)
+    }
+
+    /// Resolve a logical workspace index to a physical Vec index.
+    ///
+    /// This implements the search/co-opt/insert algorithm for static workspaces:
+    /// 1. Search for an existing workspace with matching static_id
+    /// 2. If not found, find the insertion point (before first ws with static_id > idx)
+    /// 3. Try to co-opt an empty dynamic workspace before the insertion point
+    /// 4. If none available, insert a new workspace with static_id = Some(idx)
+    pub fn resolve_workspace_index(&mut self, idx: usize) -> usize {
+        // Step 1: Search for existing workspace with matching static_id
+        if let Some(pos) = self
+            .workspaces
+            .iter()
+            .position(|ws| ws.static_id() == Some(idx))
+        {
+            return pos;
+        }
+
+        // Step 2: Find the insertion point (first workspace with static_id > Some(idx))
+        let insertion_point = self
+            .workspaces
+            .iter()
+            .position(|ws| matches!(ws.static_id(), Some(id) if id > idx))
+            .unwrap_or(self.workspaces.len());
+
+        // Step 3: Try to co-opt an empty dynamic workspace before insertion_point
+        // We look for a workspace with static_id == None AND !has_windows_or_name()
+        if let Some(pos) = self.workspaces[..insertion_point]
+            .iter()
+            .position(|ws| ws.static_id().is_none() && !ws.has_windows_or_name())
+        {
+            // Co-opt this workspace
+            self.workspaces[pos].set_static_id(Some(idx));
+            return pos;
+        }
+
+        // Step 4: Insert a new workspace with static_id = Some(idx)
+        let ws = Workspace::new(
+            self.output.clone(),
+            self.clock.clone(),
+            self.options.clone(),
+        );
+        // Note: we need a new_with_static_id variant or set it after creation
+        // For now, we'll insert and then set. But Workspace::new doesn't expose static_id.
+        // Let's use a different approach - create via add_workspace_at then set.
+        self.workspaces.insert(insertion_point, ws);
+        self.workspaces[insertion_point].set_static_id(Some(idx));
+
+        if insertion_point <= self.active_workspace_idx {
+            self.active_workspace_idx += 1;
+        }
+
+        if let Some(switch) = &mut self.workspace_switch {
+            if insertion_point as f64 <= switch.target_idx() {
+                switch.offset(1);
+            }
+        }
+
+        insertion_point
     }
 
     pub fn add_workspace_at(&mut self, idx: usize) {
@@ -864,7 +926,7 @@ impl<W: LayoutElement> Monitor<W> {
             self.active_workspace_idx
         };
 
-        let new_idx = min(idx, self.workspaces.len() - 1);
+        let new_idx = self.resolve_workspace_index(idx);
         if new_idx == source_workspace_idx {
             return;
         }
@@ -951,7 +1013,7 @@ impl<W: LayoutElement> Monitor<W> {
     pub fn move_column_to_workspace(&mut self, idx: usize, activate: bool) {
         let source_workspace_idx = self.active_workspace_idx;
 
-        let new_idx = min(idx, self.workspaces.len() - 1);
+        let new_idx = self.resolve_workspace_index(idx);
         if new_idx == source_workspace_idx {
             return;
         }
@@ -1008,18 +1070,19 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn switch_workspace(&mut self, idx: usize) {
-        self.activate_workspace(min(idx, self.workspaces.len() - 1));
+        let physical_idx = self.resolve_workspace_index(idx);
+        self.activate_workspace(physical_idx);
     }
 
     pub fn switch_workspace_auto_back_and_forth(&mut self, idx: usize) {
-        let idx = min(idx, self.workspaces.len() - 1);
+        let physical_idx = self.resolve_workspace_index(idx);
 
-        if idx == self.active_workspace_idx {
+        if physical_idx == self.active_workspace_idx {
             if let Some(prev_idx) = self.previous_workspace_idx() {
-                self.switch_workspace(prev_idx);
+                self.activate_workspace(prev_idx);
             }
         } else {
-            self.switch_workspace(idx);
+            self.activate_workspace(physical_idx);
         }
     }
 

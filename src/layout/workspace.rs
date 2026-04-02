@@ -110,6 +110,15 @@ pub struct Workspace<W: LayoutElement> {
 
     /// Unique ID of this workspace.
     id: WorkspaceId,
+
+    /// Numerical anchor for this workspace, if any.
+    ///
+    /// When `Some(N)`, this workspace is logically tied to index N. When accessed
+    /// by index (e.g. focus-workspace N), this workspace will be found regardless
+    /// of its physical position in the Vec. Empty workspaces with a static_id are
+    /// still removed by normal cleanup, but re-accessing the index will recreate
+    /// the anchor.
+    static_id: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -270,6 +279,7 @@ impl<W: LayoutElement> Workspace<W> {
             name: config.map(|c| c.name.0),
             layout_config,
             id: WorkspaceId::next(),
+            static_id: None,
         }
     }
 
@@ -334,6 +344,7 @@ impl<W: LayoutElement> Workspace<W> {
             name: config.map(|c| c.name.0),
             layout_config,
             id: WorkspaceId::next(),
+            static_id: None,
         }
     }
 
@@ -351,6 +362,14 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn unname(&mut self) {
         self.name = None;
+    }
+
+    pub fn static_id(&self) -> Option<usize> {
+        self.static_id
+    }
+
+    pub fn set_static_id(&mut self, static_id: Option<usize>) {
+        self.static_id = static_id;
     }
 
     pub fn has_windows_or_name(&self) -> bool {
