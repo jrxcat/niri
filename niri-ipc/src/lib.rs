@@ -1439,14 +1439,12 @@ pub struct Workspace {
     pub is_focused: bool,
     /// Id of the active window on this workspace, if any.
     pub active_window_id: Option<u64>,
-    /// Numerical anchor of this workspace, if any.
+    /// Numerical anchor of this workspace.
     ///
-    /// If this workspace is anchored to a specific index (static), this field
-    /// contains that index. This value remains constant even if the workspace's
-    /// physical position changes due to dynamic workspace creation/removal.
-    ///
-    /// If `None`, this is a dynamic workspace whose index may change.
-    pub static_id: Option<usize>,
+    /// Every workspace has a permanent static_id starting at 1. This value
+    /// remains constant even if the workspace's physical position changes
+    /// due to dynamic workspace creation/removal.
+    pub static_id: usize,
 }
 
 /// Configured keyboard layouts.

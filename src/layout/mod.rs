@@ -670,8 +670,14 @@ impl<W: LayoutElement> Layout<W> {
         let workspaces = config
             .workspaces
             .iter()
-            .map(|ws| {
-                Workspace::new_with_config_no_outputs(Some(ws.clone()), clock.clone(), opts.clone())
+            .enumerate()
+            .map(|(i, ws)| {
+                Workspace::new_with_config_no_outputs(
+                    Some(ws.clone()),
+                    clock.clone(),
+                    opts.clone(),
+                    i + 1,
+                )
             })
             .collect();
 
@@ -997,6 +1003,7 @@ impl<W: LayoutElement> Layout<W> {
                             workspaces.push(Workspace::new_no_outputs(
                                 self.clock.clone(),
                                 self.options.clone(),
+                                1,
                             ));
                         }
 
@@ -1027,6 +1034,7 @@ impl<W: LayoutElement> Layout<W> {
                                 workspaces.push(Workspace::new_no_outputs(
                                     self.clock.clone(),
                                     self.options.clone(),
+                                    1,
                                 ));
                             }
 
@@ -2875,17 +2883,24 @@ impl<W: LayoutElement> Layout<W> {
                     .unwrap_or(*active_monitor_idx);
                 let mon = &mut monitors[mon_idx];
 
+                // Named workspaces use static_id = 0 as a sentinel (identified by name, not number).
                 let ws = Workspace::new_with_config(
                     mon.output.clone(),
                     Some(ws_config.clone()),
                     clock,
                     options,
+                    0,
                 );
                 mon.insert_workspace(ws, 0, false);
             }
             MonitorSet::NoOutputs { workspaces } => {
-                let ws =
-                    Workspace::new_with_config_no_outputs(Some(ws_config.clone()), clock, options);
+                // Named workspaces use static_id = 0 as a sentinel.
+                let ws = Workspace::new_with_config_no_outputs(
+                    Some(ws_config.clone()),
+                    clock,
+                    options,
+                    0,
+                );
                 workspaces.insert(0, ws);
             }
         }
@@ -4175,7 +4190,13 @@ impl<W: LayoutElement> Layout<W> {
                             // Reuse the bottom empty workspace.
                             mon.workspaces.len() - 1
                         } else {
-                            mon.add_workspace_at(ws_idx);
+                            let new_static_id = if ws_idx > 0 {
+                                mon.workspaces[ws_idx - 1].static_id() + 1
+                            } else {
+                                1
+                            };
+                            mon.add_workspace_at(ws_idx, new_static_id);
+                            mon.cascade_forward(ws_idx, new_static_id);
                             ws_idx
                         }
                     }
@@ -4273,6 +4294,7 @@ impl<W: LayoutElement> Layout<W> {
                     workspaces.push(Workspace::new_no_outputs(
                         self.clock.clone(),
                         self.options.clone(),
+                        1,
                     ));
                 }
                 let ws = &mut workspaces[0];
@@ -4502,14 +4524,15 @@ impl<W: LayoutElement> Layout<W> {
                     .first()
                     .is_some_and(|first| first.id() == wsid)
             {
-                monitor.add_workspace_top();
+                monitor.add_workspace_top_with_cascade(0);
             }
             if monitor
                 .workspaces
                 .last()
                 .is_some_and(|last| last.id() == wsid)
             {
-                monitor.add_workspace_bottom();
+                let last_idx = monitor.workspaces.len() - 1;
+                monitor.add_workspace_bottom_with_cascade(last_idx);
             }
         }
     }

@@ -317,13 +317,26 @@ impl<W: LayoutElement> Monitor<W> {
             }
         }
 
+        // Compute the next static_id for the trailing empty workspace.
+        let max_static_id = workspaces
+            .iter()
+            .map(|ws| ws.static_id())
+            .max()
+            .unwrap_or(0);
+
         if options.layout.empty_workspace_above_first && !workspaces.is_empty() {
-            let ws = Workspace::new(output.clone(), clock.clone(), options.clone());
+            // Give this workspace static_id = 0 as a sentinel (below the normal 1+ range).
+            let ws = Workspace::new(output.clone(), clock.clone(), options.clone(), 0);
             workspaces.insert(0, ws);
             active_workspace_idx += 1;
         }
 
-        let ws = Workspace::new(output.clone(), clock.clone(), options.clone());
+        let ws = Workspace::new(
+            output.clone(),
+            clock.clone(),
+            options.clone(),
+            max_static_id + 1,
+        );
         workspaces.push(ws);
 
         Self {
@@ -353,8 +366,6 @@ impl<W: LayoutElement> Monitor<W> {
 
         for ws in &mut self.workspaces {
             ws.set_output(None);
-            // Degrade static workspaces to dynamic on monitor disconnect
-            ws.set_static_id(None);
         }
 
         self.workspaces
@@ -406,100 +417,96 @@ impl<W: LayoutElement> Monitor<W> {
 
     /// Resolve a logical workspace number to a physical Vec index.
     ///
-    /// Implements the Sequential Anchor Method:
-    /// 1. Search for existing workspace with `static_id == Some(requested)`
-    /// 2. Find L (largest static_id <= requested, virtual L=0 if none)
-    /// 3. Find R (smallest static_id > requested, virtual R=∞ if none)
-    /// 4. Offset = requested - L
-    /// 5. Count dynamic workspaces between L and R
-    /// 6. If Ds >= Offset: co-opt the Offset-th D
-    /// 7. If Ds < Offset: insert new workspace before R (or at end)
+    /// Implements explicit summoning (Super + N):
+    /// 1. Search for existing workspace with `static_id == requested`
+    /// 2. Find workspace with largest static_id < requested
+    /// 3. Insert new workspace immediately after it with `static_id = requested`
+    /// 4. Return new index
     ///
     /// Does NOT set static_id -- the caller must do that.
     pub fn resolve_workspace_index(&mut self, requested: usize) -> usize {
         // Step 1: Search for existing workspace with matching static_id
         if let Some(pos) = self
             .workspaces
-                .iter()
-                .position(|ws| ws.static_id() == Some(requested))
+            .iter()
+            .position(|ws| ws.static_id() == requested)
         {
             return pos;
         }
 
-        // Step 2: Find L (largest static_id < requested) and R (smallest static_id > requested)
-        let mut l_id: Option<usize> = None;
-        let mut l_idx = None;
-        let mut r_idx = None;
-
-        // Because the physical array remains ordered, we can extract both anchors in one pass.
-        for (i, ws) in self.workspaces.iter().enumerate() {
-            if let Some(id) = ws.static_id() {
-                if id < requested {
-                    // Update L to the last (and therefore largest) anchor smaller than requested
-                    l_id = Some(id);
-                    l_idx = Some(i);
-                } else if id > requested && r_idx.is_none() {
-                    // Lock R to the first anchor larger than requested
-                    r_idx = Some(i);
-                }
-            }
-        }
-
-        // Step 3: Calculate offset from L
-        let offset = if let Some(l) = l_id {
-            requested - l
-        } else {
-            requested + 1 // Treat virtual left anchor as conceptually being -1
-        };
-
-        // Step 4: Count dynamic workspaces between L and R
-        let start_idx = l_idx.map(|i| i + 1).unwrap_or(0);
-        let end_idx = r_idx.unwrap_or(self.workspaces.len());
-
-        let dynamic_count = self.workspaces[start_idx..end_idx]
+        // Step 2: Find workspace with largest static_id < requested
+        let insert_after_idx = self
+            .workspaces
             .iter()
-            .filter(|ws| ws.static_id().is_none())
-            .count();
-
-        // Step 5: Co-opt or insert
-        if dynamic_count >= offset {
-            // Co-opt the offset-th dynamic workspace
-            let mut count = 0;
-            for i in start_idx..end_idx {
-                if self.workspaces[i].static_id().is_none() {
-                    count += 1;
-                    if count == offset {
-                        return i;
-                    }
+            .enumerate()
+            .rev()
+            .find_map(|(i, ws)| {
+                if ws.static_id() < requested {
+                    Some(i)
+                } else {
+                    None
                 }
-            }
-            unreachable!() // This is now mathematically impossible to hit
-        } else {
-            // Insert before R (or at end if no R)
-            let insert_idx = r_idx.unwrap_or(self.workspaces.len());
-            let ws = Workspace::new(
-                self.output.clone(),
-                self.clock.clone(),
-                self.options.clone(),
-            );
-            self.workspaces.insert(insert_idx, ws);
-            if insert_idx <= self.active_workspace_idx {
-                self.active_workspace_idx += 1;
-            }
-            if let Some(switch) = &mut self.workspace_switch {
-                if insert_idx as f64 <= switch.target_idx() {
-                    switch.offset(1);
-                }
-            }
-            insert_idx
-        }
-    }
+            });
 
-    pub fn add_workspace_at(&mut self, idx: usize) {
+        // Step 3: Insert new workspace after the found position
+        let insert_idx = insert_after_idx.map(|i| i + 1).unwrap_or(0);
         let ws = Workspace::new(
             self.output.clone(),
             self.clock.clone(),
             self.options.clone(),
+            requested,
+        );
+        self.workspaces.insert(insert_idx, ws);
+        if insert_idx <= self.active_workspace_idx {
+            self.active_workspace_idx += 1;
+        }
+        if let Some(switch) = &mut self.workspace_switch {
+            if insert_idx as f64 <= switch.target_idx() {
+                switch.offset(1);
+            }
+        }
+
+        insert_idx
+    }
+
+    /// Cascade static_ids forward (rightward) starting from start_idx.
+    ///
+    /// If the workspace at start_idx has static_id == target_id, increment it
+    /// and continue cascading until no collision or we hit 255.
+    pub fn cascade_forward(&mut self, start_idx: usize, target_id: usize) {
+        let mut current_id = target_id;
+        for i in start_idx..self.workspaces.len() {
+            if self.workspaces[i].static_id() == current_id && current_id < 255 {
+                current_id += 1;
+                self.workspaces[i].set_static_id(current_id);
+            } else {
+                break;
+            }
+        }
+    }
+
+    /// Cascade static_ids backward (leftward) starting from start_idx.
+    ///
+    /// If the workspace at start_idx has static_id == target_id, decrement it
+    /// and continue cascading until no collision or we hit 1.
+    pub fn cascade_backward(&mut self, start_idx: usize, target_id: usize) {
+        let mut current_id = target_id;
+        for i in (0..=start_idx).rev() {
+            if self.workspaces[i].static_id() == current_id && current_id > 1 {
+                current_id -= 1;
+                self.workspaces[i].set_static_id(current_id);
+            } else {
+                break;
+            }
+        }
+    }
+
+    pub fn add_workspace_at(&mut self, idx: usize, new_static_id: usize) {
+        let ws = Workspace::new(
+            self.output.clone(),
+            self.clock.clone(),
+            self.options.clone(),
+            new_static_id,
         );
 
         self.workspaces.insert(idx, ws);
@@ -514,12 +521,27 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
-    pub fn add_workspace_top(&mut self) {
-        self.add_workspace_at(0);
+    pub fn add_workspace_bottom(&mut self, new_static_id: usize) {
+        let insert_idx = self.workspaces.len();
+        self.add_workspace_at(insert_idx, new_static_id);
+        self.cascade_forward(insert_idx, new_static_id);
     }
 
-    pub fn add_workspace_bottom(&mut self) {
-        self.add_workspace_at(self.workspaces.len());
+    pub fn add_workspace_bottom_with_cascade(&mut self, after_idx: usize) {
+        let new_static_id = self.workspaces[after_idx].static_id() + 1;
+        self.add_workspace_bottom(new_static_id);
+    }
+
+    pub fn add_workspace_top_with_cascade(&mut self, before_idx: usize) {
+        let target_id = self.workspaces[before_idx].static_id() - 1;
+        let insert_idx = 0;
+        self.add_workspace_at(insert_idx, target_id);
+        // Try backward cascade first (unlikely to succeed at index 0), fall back to forward
+        if target_id > 1 {
+            self.cascade_backward(insert_idx, target_id);
+        } else {
+            self.cascade_forward(insert_idx + 1, target_id);
+        }
     }
 
     pub fn activate_workspace(&mut self, idx: usize) {
@@ -637,10 +659,10 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         if workspace_idx == self.workspaces.len() - 1 {
-            self.add_workspace_bottom();
+            self.add_workspace_bottom_with_cascade(workspace_idx);
         }
         if self.options.layout.empty_workspace_above_first && workspace_idx == 0 {
-            self.add_workspace_top();
+            self.add_workspace_top_with_cascade(0);
             workspace_idx += 1;
         }
 
@@ -674,11 +696,11 @@ impl<W: LayoutElement> Monitor<W> {
 
         if workspace_idx == self.workspaces.len() - 1 {
             // Insert a new empty workspace.
-            self.add_workspace_bottom();
+            self.add_workspace_bottom_with_cascade(workspace_idx);
         }
 
         if self.options.layout.empty_workspace_above_first && workspace_idx == 0 {
-            self.add_workspace_top();
+            self.add_workspace_top_with_cascade(0);
             workspace_idx += 1;
         }
 
@@ -761,10 +783,10 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn remove_workspace_by_idx(&mut self, mut idx: usize) -> Workspace<W> {
         if idx == self.workspaces.len() - 1 {
-            self.add_workspace_bottom();
+            self.add_workspace_bottom_with_cascade(idx.saturating_sub(1));
         }
         if self.options.layout.empty_workspace_above_first && idx == 0 {
-            self.add_workspace_top();
+            self.add_workspace_top_with_cascade(0);
             idx += 1;
         }
 
@@ -794,7 +816,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
         if idx == 0 && self.options.layout.empty_workspace_above_first {
             // Insert a new empty workspace on top to prepare for insertion of new workspace.
-            self.add_workspace_top();
+            self.add_workspace_top_with_cascade(0);
             idx += 1;
         }
 
@@ -818,9 +840,18 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         }
 
+        // Resolve potential static_id collisions by offsetting incoming workspaces.
+        let max_existing = self
+            .workspaces
+            .iter()
+            .map(|ws| ws.static_id())
+            .max()
+            .unwrap_or(0);
+        let offset = max_existing + 1;
         for ws in &mut workspaces {
             ws.set_output(Some(self.output.clone()));
             ws.update_config(self.options.clone());
+            ws.set_static_id(ws.static_id() + offset);
         }
 
         let empty_was_focused = self.active_workspace_idx == self.workspaces.len() - 1;
@@ -836,7 +867,7 @@ impl<W: LayoutElement> Monitor<W> {
         if self.options.layout.empty_workspace_above_first
             && self.workspaces[0].has_windows_or_name()
         {
-            self.add_workspace_top();
+            self.add_workspace_top_with_cascade(0);
         }
 
         // If the empty workspace was focused on the primary monitor, keep it focused.
@@ -958,7 +989,6 @@ impl<W: LayoutElement> Monitor<W> {
         };
 
         let new_idx = self.resolve_workspace_index(idx);
-        self.workspaces[new_idx].set_static_id(Some(idx));
         if new_idx == source_workspace_idx {
             return;
         }
@@ -1046,7 +1076,6 @@ impl<W: LayoutElement> Monitor<W> {
         let source_workspace_idx = self.active_workspace_idx;
 
         let new_idx = self.resolve_workspace_index(idx);
-        self.workspaces[new_idx].set_static_id(Some(idx));
         if new_idx == source_workspace_idx {
             return;
         }
@@ -1104,13 +1133,11 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn switch_workspace(&mut self, requested: usize) {
         let physical_idx = self.resolve_workspace_index(requested);
-        self.workspaces[physical_idx].set_static_id(Some(requested));
         self.activate_workspace(physical_idx);
     }
 
     pub fn switch_workspace_auto_back_and_forth(&mut self, requested: usize) {
         let physical_idx = self.resolve_workspace_index(requested);
-        self.workspaces[physical_idx].set_static_id(Some(requested));
 
         if physical_idx == self.active_workspace_idx {
             if let Some(prev_idx) = self.previous_workspace_idx() {
@@ -1289,7 +1316,7 @@ impl<W: LayoutElement> Monitor<W> {
             && self.workspaces.len() > 1
         {
             if options.layout.empty_workspace_above_first {
-                self.add_workspace_top();
+                self.add_workspace_top_with_cascade(0);
             } else if self.workspace_switch.is_none() && self.active_workspace_idx != 0 {
                 self.workspaces.remove(0);
                 self.active_workspace_idx = self.active_workspace_idx.saturating_sub(1);
@@ -1346,11 +1373,11 @@ impl<W: LayoutElement> Monitor<W> {
 
         if new_idx == self.workspaces.len() - 1 {
             // Insert a new empty workspace.
-            self.add_workspace_bottom();
+            self.add_workspace_bottom_with_cascade(new_idx);
         }
 
         if self.options.layout.empty_workspace_above_first && self.active_workspace_idx == 0 {
-            self.add_workspace_top();
+            self.add_workspace_top_with_cascade(0);
             new_idx += 1;
         }
 
@@ -1372,11 +1399,11 @@ impl<W: LayoutElement> Monitor<W> {
 
         if self.active_workspace_idx == self.workspaces.len() - 1 {
             // Insert a new empty workspace.
-            self.add_workspace_bottom();
+            self.add_workspace_bottom_with_cascade(self.active_workspace_idx);
         }
 
         if self.options.layout.empty_workspace_above_first && new_idx == 0 {
-            self.add_workspace_top();
+            self.add_workspace_top_with_cascade(0);
             new_idx += 1;
         }
 
@@ -1404,21 +1431,21 @@ impl<W: LayoutElement> Monitor<W> {
         if new_idx > old_idx {
             if new_idx == self.workspaces.len() - 1 {
                 // Insert a new empty workspace.
-                self.add_workspace_bottom();
+                self.add_workspace_bottom_with_cascade(new_idx);
             }
 
             if self.options.layout.empty_workspace_above_first && old_idx == 0 {
-                self.add_workspace_top();
+                self.add_workspace_top_with_cascade(0);
                 new_idx += 1;
             }
         } else {
             if old_idx == self.workspaces.len() - 1 {
                 // Insert a new empty workspace.
-                self.add_workspace_bottom();
+                self.add_workspace_bottom_with_cascade(new_idx);
             }
 
             if self.options.layout.empty_workspace_above_first && new_idx == 0 {
-                self.add_workspace_top();
+                self.add_workspace_top_with_cascade(0);
                 new_idx += 1;
             }
         }
