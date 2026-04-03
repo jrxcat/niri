@@ -420,31 +420,37 @@ impl<W: LayoutElement> Monitor<W> {
         // Step 1: Search for existing workspace with matching static_id
         if let Some(pos) = self
             .workspaces
-            .iter()
-            .position(|ws| ws.static_id() == Some(requested))
+                .iter()
+                .position(|ws| ws.static_id() == Some(requested))
         {
             return pos;
         }
 
-        // Step 2: Find L (largest static_id <= requested) and R (smallest static_id > requested)
-        let mut l_id = 0; // Virtual left anchor
-        let mut l_idx = None; // Physical index of L (None if virtual)
-        let mut r_idx = None; // Physical index of R (None if no right anchor)
+        // Step 2: Find L (largest static_id < requested) and R (smallest static_id > requested)
+        let mut l_id: Option<usize> = None;
+        let mut l_idx = None;
+        let mut r_idx = None;
 
+        // Because the physical array remains ordered, we can extract both anchors in one pass.
         for (i, ws) in self.workspaces.iter().enumerate() {
             if let Some(id) = ws.static_id() {
-                if id <= requested && id > l_id {
-                    l_id = id;
+                if id < requested {
+                    // Update L to the last (and therefore largest) anchor smaller than requested
+                    l_id = Some(id);
                     l_idx = Some(i);
-                }
-                if id > requested && r_idx.is_none() {
+                } else if id > requested && r_idx.is_none() {
+                    // Lock R to the first anchor larger than requested
                     r_idx = Some(i);
                 }
             }
         }
 
         // Step 3: Calculate offset from L
-        let offset = requested - l_id;
+        let offset = if let Some(l) = l_id {
+            requested - l
+        } else {
+            requested + 1 // Treat virtual left anchor as conceptually being -1
+        };
 
         // Step 4: Count dynamic workspaces between L and R
         let start_idx = l_idx.map(|i| i + 1).unwrap_or(0);
@@ -467,7 +473,7 @@ impl<W: LayoutElement> Monitor<W> {
                     }
                 }
             }
-            unreachable!()
+            unreachable!() // This is now mathematically impossible to hit
         } else {
             // Insert before R (or at end if no R)
             let insert_idx = r_idx.unwrap_or(self.workspaces.len());
