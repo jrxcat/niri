@@ -1416,8 +1416,6 @@ pub struct Workspace {
     pub id: u64,
     /// Index of the workspace on its monitor.
     ///
-    /// This is the same index you can use for requests like `niri msg action focus-workspace`.
-    ///
     /// This index *will change* as you move and re-order workspace. It is merely the workspace's
     /// current position on its monitor. Workspaces on different monitors can have the same index.
     ///
