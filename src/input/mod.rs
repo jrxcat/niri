@@ -1281,7 +1281,7 @@ impl State {
             }
             Action::MoveWindowToWorkspace(reference, focus) => {
                 if let Some((mut output, index)) =
-                    self.niri.find_output_and_workspace_index(reference)
+                    self.niri.find_output_and_workspace_static_id(reference)
                 {
                     // The source output is always the active output, so if the target output is
                     // also the active output, we don't need to use move_to_output().
@@ -1389,7 +1389,7 @@ impl State {
             }
             Action::MoveColumnToWorkspace(reference, focus) => {
                 if let Some((mut output, index)) =
-                    self.niri.find_output_and_workspace_index(reference)
+                    self.niri.find_output_and_workspace_static_id(reference)
                 {
                     if let Some(active) = self.niri.layout.active_output() {
                         if output.as_ref() == Some(active) {
@@ -1457,7 +1457,7 @@ impl State {
             }
             Action::FocusWorkspace(reference) => {
                 if let Some((mut output, index)) =
-                    self.niri.find_output_and_workspace_index(reference)
+                    self.niri.find_output_and_workspace_static_id(reference)
                 {
                     if let Some(active) = self.niri.layout.active_output() {
                         if output.as_ref() == Some(active) {

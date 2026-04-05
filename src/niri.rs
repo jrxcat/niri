@@ -3517,6 +3517,30 @@ impl Niri {
         Some((target_output.cloned(), target_workspace_index))
     }
 
+    /// Resolve a workspace reference to its output and static_id.
+    ///
+    /// Unlike `find_output_and_workspace_index`, this returns the workspace's
+    /// `static_id` (user-facing number) rather than its physical Vec index.
+    pub fn find_output_and_workspace_static_id(
+        &self,
+        workspace_reference: WorkspaceReference,
+    ) -> Option<(Option<Output>, usize)> {
+        match workspace_reference {
+            WorkspaceReference::Index(static_id) => Some((None, static_id as usize)),
+            WorkspaceReference::Name(name) => {
+                let (_, ws) = self.layout.find_workspace_by_name(&name)?;
+                let output = ws.current_output().cloned();
+                Some((output, ws.static_id()))
+            }
+            WorkspaceReference::Id(id) => {
+                let id = WorkspaceId::specific(id);
+                let (_, ws) = self.layout.find_workspace_by_id(id)?;
+                let output = ws.current_output().cloned();
+                Some((output, ws.static_id()))
+            }
+        }
+    }
+
     pub fn find_window_by_id(&self, id: MappedId) -> Option<Window> {
         self.layout
             .windows()

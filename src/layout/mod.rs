@@ -3245,7 +3245,7 @@ impl<W: LayoutElement> Layout<W> {
         &mut self,
         window: Option<&W::Id>,
         output: &Output,
-        target_ws_idx: Option<usize>,
+        target_ws_static_id: Option<usize>,
         activate: ActivateWindow,
     ) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
@@ -3282,7 +3282,17 @@ impl<W: LayoutElement> Layout<W> {
                 (mon_idx, mon.active_workspace_idx)
             };
 
-            let workspace_idx = target_ws_idx.unwrap_or(monitors[new_idx].active_workspace_idx);
+            // Resolve static_id to physical Vec index
+            let target_mon = &monitors[new_idx];
+            let workspace_idx = if let Some(static_id) = target_ws_static_id {
+                target_mon
+                    .workspaces
+                    .iter()
+                    .position(|ws| ws.static_id() == static_id)
+                    .unwrap_or(target_mon.active_workspace_idx)
+            } else {
+                target_mon.active_workspace_idx
+            };
             if mon_idx == new_idx && ws_idx == workspace_idx {
                 return;
             }
@@ -3346,7 +3356,7 @@ impl<W: LayoutElement> Layout<W> {
     pub fn move_column_to_output(
         &mut self,
         output: &Output,
-        target_ws_idx: Option<usize>,
+        target_ws_static_id: Option<usize>,
         activate: bool,
     ) {
         if let MonitorSet::Normal {
@@ -3372,9 +3382,18 @@ impl<W: LayoutElement> Layout<W> {
                 return;
             };
 
-            let workspace_idx = target_ws_idx
-                .unwrap_or(monitors[new_idx].active_workspace_idx)
-                .min(monitors[new_idx].workspaces.len() - 1);
+            // Resolve static_id to physical Vec index
+            let target_mon = &monitors[new_idx];
+            let workspace_idx = if let Some(static_id) = target_ws_static_id {
+                target_mon
+                    .workspaces
+                    .iter()
+                    .position(|ws| ws.static_id() == static_id)
+                    .unwrap_or(target_mon.active_workspace_idx)
+            } else {
+                target_mon.active_workspace_idx
+            }
+            .min(target_mon.workspaces.len() - 1);
             self.add_column_by_idx(new_idx, workspace_idx, column, activate);
         }
     }
