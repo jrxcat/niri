@@ -779,14 +779,16 @@ impl<W: LayoutElement> Monitor<W> {
             self.active_workspace_idx = 0;
         }
 
-        // Update trailing workspace static_id to max_existing + 1.
+        // Update trailing workspace static_id to max_existing + 1, unless it's the active workspace.
         let last_idx = self.workspaces.len() - 1;
-        let max_existing = self.workspaces[..last_idx]
-            .iter()
-            .map(|ws| ws.static_id())
-            .max()
-            .unwrap_or(0);
-        self.workspaces[last_idx].set_static_id(max_existing + 1);
+        if self.active_workspace_idx != last_idx {
+            let max_existing = self.workspaces[..last_idx]
+                .iter()
+                .map(|ws| ws.static_id())
+                .max()
+                .unwrap_or(0);
+            self.workspaces[last_idx].set_static_id(max_existing + 1);
+        }
     }
 
     pub fn unname_workspace(&mut self, id: WorkspaceId) -> bool {
