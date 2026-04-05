@@ -998,7 +998,7 @@ impl<W: LayoutElement> Monitor<W> {
         };
 
         let new_idx = self.resolve_workspace_index(idx);
-        if self.workspaces[new_idx].static_id() != idx {
+        if self.workspaces.get(new_idx).map(|ws| ws.static_id()) != Some(idx) {
             self.add_workspace_at(new_idx, idx);
         }
         if new_idx == source_workspace_idx {
@@ -1088,7 +1088,7 @@ impl<W: LayoutElement> Monitor<W> {
         let source_workspace_idx = self.active_workspace_idx;
 
         let new_idx = self.resolve_workspace_index(idx);
-        if self.workspaces[new_idx].static_id() != idx {
+        if self.workspaces.get(new_idx).map(|ws| ws.static_id()) != Some(idx) {
             self.add_workspace_at(new_idx, idx);
         }
         if new_idx == source_workspace_idx {
@@ -1148,7 +1148,7 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn switch_workspace(&mut self, requested: usize) {
         let physical_idx = self.resolve_workspace_index(requested);
-        if self.workspaces[physical_idx].static_id() != requested {
+        if self.workspaces.get(physical_idx).map(|ws| ws.static_id()) != Some(requested) {
             self.add_workspace_at(physical_idx, requested);
         }
         self.activate_workspace(physical_idx);
@@ -1156,7 +1156,7 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn switch_workspace_auto_back_and_forth(&mut self, requested: usize) {
         let physical_idx = self.resolve_workspace_index(requested);
-        if self.workspaces[physical_idx].static_id() != requested {
+        if self.workspaces.get(physical_idx).map(|ws| ws.static_id()) != Some(requested) {
             self.add_workspace_at(physical_idx, requested);
         }
 
