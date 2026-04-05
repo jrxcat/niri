@@ -417,14 +417,11 @@ impl<W: LayoutElement> Monitor<W> {
 
     /// Resolve a logical workspace number to a physical Vec index.
     ///
-    /// Implements explicit summoning (Super + N):
-    /// 1. Search for existing workspace with `static_id == requested`
-    /// 2. Find workspace with largest static_id < requested
-    /// 3. Insert new workspace immediately after it with `static_id = requested`
-    /// 4. Return new index
+    /// Resolve a logical workspace number to a physical Vec index.
     ///
-    /// Does NOT set static_id -- the caller must do that.
-    pub fn resolve_workspace_index(&mut self, requested: usize) -> usize {
+    /// Side-effect-free: returns the index where the workspace with the given
+    /// static_id exists, or where it should be inserted.
+    pub fn resolve_workspace_index(&self, requested: usize) -> usize {
         // Step 1: Search for existing workspace with matching static_id
         if let Some(pos) = self
             .workspaces
@@ -448,31 +445,12 @@ impl<W: LayoutElement> Monitor<W> {
                 }
             });
 
-        // Step 3: Insert new workspace after the found position
-        let insert_idx = insert_after_idx.map(|i| i + 1).unwrap_or(0);
-        let ws = Workspace::new(
-            self.output.clone(),
-            self.clock.clone(),
-            self.options.clone(),
-            requested,
-        );
-        self.workspaces.insert(insert_idx, ws);
-        if insert_idx <= self.active_workspace_idx {
-            self.active_workspace_idx += 1;
-        }
-        if let Some(switch) = &mut self.workspace_switch {
-            if insert_idx as f64 <= switch.target_idx() {
-                switch.offset(1);
-            }
-        }
-
-        insert_idx
+        insert_after_idx.map(|i| i + 1).unwrap_or(0)
     }
 
     /// Cascade static_ids forward (rightward) starting from start_idx.
     ///
-    /// If the workspace at start_idx has static_id == target_id, increment it
-    /// and continue cascading until no collision or we hit 255.
+    /// Increments colliding workspace static_ids until no collision or we hit 255.
     pub fn cascade_forward(&mut self, start_idx: usize, target_id: usize) {
         let mut current_id = target_id;
         for i in start_idx..self.workspaces.len() {
@@ -485,13 +463,12 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
-    /// Cascade static_ids backward (leftward) starting from start_idx.
+    /// Cascade static_ids backward (leftward) up to (but not including) start_idx.
     ///
-    /// If the workspace at start_idx has static_id == target_id, decrement it
-    /// and continue cascading until no collision or we hit 1.
+    /// Decrements colliding workspace static_ids until no collision or we hit 1.
     pub fn cascade_backward(&mut self, start_idx: usize, target_id: usize) {
         let mut current_id = target_id;
-        for i in (0..=start_idx).rev() {
+        for i in (0..start_idx).rev() {
             if self.workspaces[i].static_id() == current_id && current_id > 1 {
                 current_id -= 1;
                 self.workspaces[i].set_static_id(current_id);
@@ -501,7 +478,40 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
+    /// Check if backward cascade is possible for the given target_id.
+    ///
+    /// Backward cascade fails if any workspace at index i has static_id <= i.
+    fn can_cascade_backward(&self, target_id: usize) -> bool {
+        for (i, ws) in self.workspaces.iter().enumerate() {
+            let id = ws.static_id();
+            if id >= target_id {
+                break;
+            }
+            if id <= i {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Check if a workspace with the given static_id already exists.
+    fn has_static_id(&self, static_id: usize) -> bool {
+        self.workspaces.iter().any(|ws| ws.static_id() == static_id)
+    }
+
+    /// Insert a new workspace at the given index with the given static_id.
+    ///
+    /// Cascades existing workspaces BEFORE insertion to avoid duplicate static_ids.
     pub fn add_workspace_at(&mut self, idx: usize, new_static_id: usize) {
+        // Cascade BEFORE insertion — array never has duplicate static_ids.
+        if self.has_static_id(new_static_id) {
+            if self.can_cascade_backward(new_static_id) {
+                self.cascade_backward(idx, new_static_id);
+            } else {
+                self.cascade_forward(idx, new_static_id);
+            }
+        }
+
         let ws = Workspace::new(
             self.output.clone(),
             self.clock.clone(),
@@ -521,27 +531,26 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
-    pub fn add_workspace_bottom(&mut self, new_static_id: usize) {
-        let insert_idx = self.workspaces.len();
-        self.add_workspace_at(insert_idx, new_static_id);
-        self.cascade_forward(insert_idx, new_static_id);
-    }
-
-    pub fn add_workspace_bottom_with_cascade(&mut self, after_idx: usize) {
-        let new_static_id = self.workspaces[after_idx].static_id() + 1;
-        self.add_workspace_bottom(new_static_id);
-    }
-
-    pub fn add_workspace_top_with_cascade(&mut self, before_idx: usize) {
-        let target_id = self.workspaces[before_idx].static_id() - 1;
-        let insert_idx = 0;
-        self.add_workspace_at(insert_idx, target_id);
-        // Try backward cascade first (unlikely to succeed at index 0), fall back to forward
-        if target_id > 1 {
-            self.cascade_backward(insert_idx, target_id);
+    /// Insert a new empty workspace at the top (index 0).
+    ///
+    /// Always gets static_id = 1. If a sentinel (static_id = 0) exists at index 0,
+    /// cascade forward from index 1 and insert at index 1. Otherwise insert at index 0.
+    pub fn add_workspace_top(&mut self) {
+        if self.workspaces[0].static_id() == 0 {
+            self.cascade_forward(1, 1);
+            self.add_workspace_at(1, 1);
         } else {
-            self.cascade_forward(insert_idx + 1, target_id);
+            self.cascade_forward(0, 1);
+            self.add_workspace_at(0, 1);
         }
+    }
+
+    /// Insert a new empty workspace at the bottom (end of array).
+    ///
+    /// Gets static_id = last.static_id + 1. No cascade needed — always a new max.
+    pub fn add_workspace_bottom(&mut self) {
+        let new_static_id = self.workspaces.last().unwrap().static_id() + 1;
+        self.add_workspace_at(self.workspaces.len(), new_static_id);
     }
 
     pub fn activate_workspace(&mut self, idx: usize) {
@@ -659,10 +668,10 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         if workspace_idx == self.workspaces.len() - 1 {
-            self.add_workspace_bottom_with_cascade(workspace_idx);
+            self.add_workspace_bottom();
         }
         if self.options.layout.empty_workspace_above_first && workspace_idx == 0 {
-            self.add_workspace_top_with_cascade(0);
+            self.add_workspace_top();
             workspace_idx += 1;
         }
 
@@ -696,11 +705,11 @@ impl<W: LayoutElement> Monitor<W> {
 
         if workspace_idx == self.workspaces.len() - 1 {
             // Insert a new empty workspace.
-            self.add_workspace_bottom_with_cascade(workspace_idx);
+            self.add_workspace_bottom();
         }
 
         if self.options.layout.empty_workspace_above_first && workspace_idx == 0 {
-            self.add_workspace_top_with_cascade(0);
+            self.add_workspace_top();
             workspace_idx += 1;
         }
 
@@ -783,10 +792,10 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn remove_workspace_by_idx(&mut self, mut idx: usize) -> Workspace<W> {
         if idx == self.workspaces.len() - 1 {
-            self.add_workspace_bottom_with_cascade(idx.saturating_sub(1));
+            self.add_workspace_bottom();
         }
         if self.options.layout.empty_workspace_above_first && idx == 0 {
-            self.add_workspace_top_with_cascade(0);
+            self.add_workspace_top();
             idx += 1;
         }
 
@@ -816,7 +825,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
         if idx == 0 && self.options.layout.empty_workspace_above_first {
             // Insert a new empty workspace on top to prepare for insertion of new workspace.
-            self.add_workspace_top_with_cascade(0);
+            self.add_workspace_top();
             idx += 1;
         }
 
@@ -867,7 +876,7 @@ impl<W: LayoutElement> Monitor<W> {
         if self.options.layout.empty_workspace_above_first
             && self.workspaces[0].has_windows_or_name()
         {
-            self.add_workspace_top_with_cascade(0);
+            self.add_workspace_top();
         }
 
         // If the empty workspace was focused on the primary monitor, keep it focused.
@@ -989,6 +998,9 @@ impl<W: LayoutElement> Monitor<W> {
         };
 
         let new_idx = self.resolve_workspace_index(idx);
+        if self.workspaces[new_idx].static_id() != idx {
+            self.add_workspace_at(new_idx, idx);
+        }
         if new_idx == source_workspace_idx {
             return;
         }
@@ -1076,6 +1088,9 @@ impl<W: LayoutElement> Monitor<W> {
         let source_workspace_idx = self.active_workspace_idx;
 
         let new_idx = self.resolve_workspace_index(idx);
+        if self.workspaces[new_idx].static_id() != idx {
+            self.add_workspace_at(new_idx, idx);
+        }
         if new_idx == source_workspace_idx {
             return;
         }
@@ -1133,11 +1148,17 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn switch_workspace(&mut self, requested: usize) {
         let physical_idx = self.resolve_workspace_index(requested);
+        if self.workspaces[physical_idx].static_id() != requested {
+            self.add_workspace_at(physical_idx, requested);
+        }
         self.activate_workspace(physical_idx);
     }
 
     pub fn switch_workspace_auto_back_and_forth(&mut self, requested: usize) {
         let physical_idx = self.resolve_workspace_index(requested);
+        if self.workspaces[physical_idx].static_id() != requested {
+            self.add_workspace_at(physical_idx, requested);
+        }
 
         if physical_idx == self.active_workspace_idx {
             if let Some(prev_idx) = self.previous_workspace_idx() {
@@ -1316,7 +1337,7 @@ impl<W: LayoutElement> Monitor<W> {
             && self.workspaces.len() > 1
         {
             if options.layout.empty_workspace_above_first {
-                self.add_workspace_top_with_cascade(0);
+                self.add_workspace_top();
             } else if self.workspace_switch.is_none() && self.active_workspace_idx != 0 {
                 self.workspaces.remove(0);
                 self.active_workspace_idx = self.active_workspace_idx.saturating_sub(1);
@@ -1373,11 +1394,11 @@ impl<W: LayoutElement> Monitor<W> {
 
         if new_idx == self.workspaces.len() - 1 {
             // Insert a new empty workspace.
-            self.add_workspace_bottom_with_cascade(new_idx);
+            self.add_workspace_bottom();
         }
 
         if self.options.layout.empty_workspace_above_first && self.active_workspace_idx == 0 {
-            self.add_workspace_top_with_cascade(0);
+            self.add_workspace_top();
             new_idx += 1;
         }
 
@@ -1399,11 +1420,11 @@ impl<W: LayoutElement> Monitor<W> {
 
         if self.active_workspace_idx == self.workspaces.len() - 1 {
             // Insert a new empty workspace.
-            self.add_workspace_bottom_with_cascade(self.active_workspace_idx);
+            self.add_workspace_bottom();
         }
 
         if self.options.layout.empty_workspace_above_first && new_idx == 0 {
-            self.add_workspace_top_with_cascade(0);
+            self.add_workspace_top();
             new_idx += 1;
         }
 
@@ -1431,21 +1452,21 @@ impl<W: LayoutElement> Monitor<W> {
         if new_idx > old_idx {
             if new_idx == self.workspaces.len() - 1 {
                 // Insert a new empty workspace.
-                self.add_workspace_bottom_with_cascade(new_idx);
+                self.add_workspace_bottom();
             }
 
             if self.options.layout.empty_workspace_above_first && old_idx == 0 {
-                self.add_workspace_top_with_cascade(0);
+                self.add_workspace_top();
                 new_idx += 1;
             }
         } else {
             if old_idx == self.workspaces.len() - 1 {
                 // Insert a new empty workspace.
-                self.add_workspace_bottom_with_cascade(new_idx);
+                self.add_workspace_bottom();
             }
 
             if self.options.layout.empty_workspace_above_first && new_idx == 0 {
-                self.add_workspace_top_with_cascade(0);
+                self.add_workspace_top();
                 new_idx += 1;
             }
         }

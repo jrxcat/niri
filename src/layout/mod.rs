@@ -4196,7 +4196,6 @@ impl<W: LayoutElement> Layout<W> {
                                 1
                             };
                             mon.add_workspace_at(ws_idx, new_static_id);
-                            mon.cascade_forward(ws_idx, new_static_id);
                             ws_idx
                         }
                     }
@@ -4524,15 +4523,14 @@ impl<W: LayoutElement> Layout<W> {
                     .first()
                     .is_some_and(|first| first.id() == wsid)
             {
-                monitor.add_workspace_top_with_cascade(0);
+                monitor.add_workspace_top();
             }
             if monitor
                 .workspaces
                 .last()
                 .is_some_and(|last| last.id() == wsid)
             {
-                let last_idx = monitor.workspaces.len() - 1;
-                monitor.add_workspace_bottom_with_cascade(last_idx);
+                monitor.add_workspace_bottom();
             }
         }
     }
