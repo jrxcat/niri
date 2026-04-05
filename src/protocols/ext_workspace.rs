@@ -88,9 +88,17 @@ pub fn refresh(state: &mut State) {
 
     let mut changed = false;
 
-    // Remove workspaces that no longer exist (sending workspace_leave to workspace groups).
+    // Remove workspaces that no longer exist or should be hidden (sending workspace_leave to workspace groups).
     let mut seen_workspaces = HashMap::new();
-    for (mon, _, ws) in state.niri.layout.workspaces() {
+    for (mon, ws_idx, ws) in state.niri.layout.workspaces() {
+        // Skip trailing empty workspace unless it's the active workspace.
+        if mon.is_some_and(|mon| {
+            ws_idx == mon.workspace_count() - 1
+                && !ws.has_windows_or_name()
+                && mon.active_workspace_idx() != ws_idx
+        }) {
+            continue;
+        }
         let output = mon.map(|mon| mon.output());
         seen_workspaces.insert(ws.id(), output);
     }
