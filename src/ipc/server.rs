@@ -663,6 +663,14 @@ impl State {
 
             let workspaces = layout
                 .workspaces()
+                .filter(|(mon, ws_idx, ws)| {
+                    // Skip trailing empty workspace unless it's the active workspace.
+                    !mon.is_some_and(|mon| {
+                        *ws_idx == mon.workspace_count() - 1
+                            && !ws.has_windows_or_name()
+                            && mon.active_workspace_idx() != *ws_idx
+                    })
+                })
                 .map(|(mon, ws_idx, ws)| {
                     let id = ws.id().get();
                     let name = ws.static_id().to_string();

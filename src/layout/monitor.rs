@@ -383,6 +383,10 @@ impl<W: LayoutElement> Monitor<W> {
         self.active_workspace_idx
     }
 
+    pub fn workspace_count(&self) -> usize {
+        self.workspaces.len()
+    }
+
     pub fn active_workspace_ref(&self) -> &Workspace<W> {
         &self.workspaces[self.active_workspace_idx]
     }

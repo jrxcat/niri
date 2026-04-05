@@ -133,6 +133,14 @@ pub fn refresh(state: &mut State) {
 
     // Update existing workspaces and create new ones.
     for (mon, ws_idx, ws) in state.niri.layout.workspaces() {
+        // Skip trailing empty workspace unless it's the active workspace.
+        if mon.is_some_and(|mon| {
+            ws_idx == mon.workspace_count() - 1
+                && !ws.has_windows_or_name()
+                && mon.active_workspace_idx() != ws_idx
+        }) {
+            continue;
+        }
         changed |= refresh_workspace(protocol_state, mon, ws_idx, ws);
     }
 
@@ -250,11 +258,10 @@ fn remove_workspace_instances(
     }
 }
 
-fn build_name(ws: &Workspace<Mapped>, ws_idx: usize) -> String {
-    ws.name().cloned().unwrap_or_else(|| {
-        // Add 1 since this is a human-readable name, and our action indexing is 1-based.
-        (ws_idx + 1).to_string()
-    })
+fn build_name(ws: &Workspace<Mapped>, _ws_idx: usize) -> String {
+    ws.name()
+        .cloned()
+        .unwrap_or_else(|| ws.static_id().to_string())
 }
 
 fn refresh_workspace(
