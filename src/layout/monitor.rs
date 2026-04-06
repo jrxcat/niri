@@ -484,8 +484,17 @@ impl<W: LayoutElement> Monitor<W> {
 
     /// Check if backward cascade is possible for the given target_id.
     ///
-    /// Backward cascade fails if any workspace at index i has static_id <= i.
+    /// Backward cascade fails if any workspace at index i has static_id <= i,
+    /// or if the first workspace already has static_id == target_id (no room
+    /// to cascade it backward).
     fn can_cascade_backward(&self, target_id: usize) -> bool {
+        if self
+            .workspaces
+            .first()
+            .is_some_and(|ws| ws.static_id() == target_id)
+        {
+            return false;
+        }
         for (i, ws) in self.workspaces.iter().enumerate() {
             let id = ws.static_id();
             if id >= target_id {
