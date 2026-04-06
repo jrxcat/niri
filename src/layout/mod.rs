@@ -3284,14 +3284,19 @@ impl<W: LayoutElement> Layout<W> {
                 (mon_idx, mon.active_workspace_idx)
             };
 
-            // Resolve static_id to physical Vec index
-            let target_mon = &monitors[new_idx];
+            // Resolve static_id to physical Vec index, creating workspace if needed.
+            let target_mon = &mut monitors[new_idx];
             let workspace_idx = if let Some(static_id) = target_ws_static_id {
-                target_mon
+                let physical_idx = target_mon.resolve_workspace_index(static_id);
+                if target_mon
                     .workspaces
-                    .iter()
-                    .position(|ws| ws.static_id() == static_id)
-                    .unwrap_or(target_mon.active_workspace_idx)
+                    .get(physical_idx)
+                    .map(|ws| ws.static_id())
+                    != Some(static_id)
+                {
+                    target_mon.add_workspace_at(physical_idx, static_id);
+                }
+                physical_idx.min(target_mon.workspaces.len() - 1)
             } else {
                 target_mon.active_workspace_idx
             };
@@ -3384,18 +3389,22 @@ impl<W: LayoutElement> Layout<W> {
                 return;
             };
 
-            // Resolve static_id to physical Vec index
-            let target_mon = &monitors[new_idx];
+            // Resolve static_id to physical Vec index, creating workspace if needed.
+            let target_mon = &mut monitors[new_idx];
             let workspace_idx = if let Some(static_id) = target_ws_static_id {
-                target_mon
+                let physical_idx = target_mon.resolve_workspace_index(static_id);
+                if target_mon
                     .workspaces
-                    .iter()
-                    .position(|ws| ws.static_id() == static_id)
-                    .unwrap_or(target_mon.active_workspace_idx)
+                    .get(physical_idx)
+                    .map(|ws| ws.static_id())
+                    != Some(static_id)
+                {
+                    target_mon.add_workspace_at(physical_idx, static_id);
+                }
+                physical_idx.min(target_mon.workspaces.len() - 1)
             } else {
                 target_mon.active_workspace_idx
-            }
-            .min(target_mon.workspaces.len() - 1);
+            };
             self.add_column_by_idx(new_idx, workspace_idx, column, activate);
         }
     }
