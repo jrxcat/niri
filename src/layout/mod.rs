@@ -1496,6 +1496,7 @@ impl<W: LayoutElement> Layout<W> {
             for (workspace_idx, ws) in mon.workspaces.iter_mut().enumerate() {
                 if ws.activate_window(window) {
                     *active_monitor_idx = monitor_idx;
+                    let static_id = ws.static_id();
 
                     // If currently in the middle of a vertical swipe between the target workspace
                     // and some other, don't switch the workspace.
@@ -1503,7 +1504,7 @@ impl<W: LayoutElement> Layout<W> {
                         Some(WorkspaceSwitch::Gesture(gesture))
                             if gesture.current_idx.floor() == workspace_idx as f64
                                 || gesture.current_idx.ceil() == workspace_idx as f64 => {}
-                        _ => mon.switch_workspace(workspace_idx),
+                        _ => mon.switch_workspace(static_id),
                     }
 
                     return;
@@ -1532,6 +1533,7 @@ impl<W: LayoutElement> Layout<W> {
             for (workspace_idx, ws) in mon.workspaces.iter_mut().enumerate() {
                 if ws.activate_window_without_raising(window) {
                     *active_monitor_idx = monitor_idx;
+                    let static_id = ws.static_id();
 
                     // If currently in the middle of a vertical swipe between the target workspace
                     // and some other, don't switch the workspace.
@@ -1539,7 +1541,7 @@ impl<W: LayoutElement> Layout<W> {
                         Some(WorkspaceSwitch::Gesture(gesture))
                             if gesture.current_idx.floor() == workspace_idx as f64
                                 || gesture.current_idx.ceil() == workspace_idx as f64 => {}
-                        _ => mon.switch_workspace(workspace_idx),
+                        _ => mon.switch_workspace(static_id),
                     }
 
                     return;
