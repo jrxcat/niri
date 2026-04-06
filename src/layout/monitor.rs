@@ -682,7 +682,7 @@ impl<W: LayoutElement> Monitor<W> {
             self.add_workspace_bottom();
         }
         if self.options.layout.empty_workspace_above_first && workspace_idx == 0 {
-            self.add_workspace_top();
+            self.add_workspace_at(0, 0);
             workspace_idx += 1;
         }
 
@@ -720,7 +720,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         if self.options.layout.empty_workspace_above_first && workspace_idx == 0 {
-            self.add_workspace_top();
+            self.add_workspace_at(0, 0);
             workspace_idx += 1;
         }
 
@@ -821,7 +821,7 @@ impl<W: LayoutElement> Monitor<W> {
             self.add_workspace_bottom();
         }
         if self.options.layout.empty_workspace_above_first && idx == 0 {
-            self.add_workspace_top();
+            self.add_workspace_at(0, 0);
             idx += 1;
         }
 
@@ -851,7 +851,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
         if idx == 0 && self.options.layout.empty_workspace_above_first {
             // Insert a new empty workspace on top to prepare for insertion of new workspace.
-            self.add_workspace_top();
+            self.add_workspace_at(0, 0);
             idx += 1;
         }
 
@@ -902,7 +902,7 @@ impl<W: LayoutElement> Monitor<W> {
         if self.options.layout.empty_workspace_above_first
             && self.workspaces[0].has_windows_or_name()
         {
-            self.add_workspace_top();
+            self.add_workspace_at(0, 0);
         }
 
         // If the empty workspace was focused on the primary monitor, keep it focused.
@@ -1360,7 +1360,7 @@ impl<W: LayoutElement> Monitor<W> {
             && self.workspaces.len() > 1
         {
             if options.layout.empty_workspace_above_first {
-                self.add_workspace_top();
+                self.add_workspace_at(0, 0);
             } else if self.workspace_switch.is_none() && self.active_workspace_idx != 0 {
                 self.workspaces.remove(0);
                 self.active_workspace_idx = self.active_workspace_idx.saturating_sub(1);
@@ -1421,7 +1421,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         if self.options.layout.empty_workspace_above_first && self.active_workspace_idx == 0 {
-            self.add_workspace_top();
+            self.add_workspace_at(0, 0);
             new_idx += 1;
         }
 
@@ -1447,7 +1447,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         if self.options.layout.empty_workspace_above_first && new_idx == 0 {
-            self.add_workspace_top();
+            self.add_workspace_at(0, 0);
             new_idx += 1;
         }
 
@@ -1479,7 +1479,7 @@ impl<W: LayoutElement> Monitor<W> {
             }
 
             if self.options.layout.empty_workspace_above_first && old_idx == 0 {
-                self.add_workspace_top();
+                self.add_workspace_at(0, 0);
                 new_idx += 1;
             }
         } else {
@@ -1489,7 +1489,7 @@ impl<W: LayoutElement> Monitor<W> {
             }
 
             if self.options.layout.empty_workspace_above_first && new_idx == 0 {
-                self.add_workspace_top();
+                self.add_workspace_at(0, 0);
                 new_idx += 1;
             }
         }

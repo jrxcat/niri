@@ -4545,7 +4545,7 @@ impl<W: LayoutElement> Layout<W> {
                     .first()
                     .is_some_and(|first| first.id() == wsid)
             {
-                monitor.add_workspace_top();
+                monitor.add_workspace_at(0, 0);
             }
             if monitor
                 .workspaces
