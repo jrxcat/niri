@@ -3285,6 +3285,7 @@ impl<W: LayoutElement> Layout<W> {
             };
 
             // Resolve static_id to physical Vec index, creating workspace if needed.
+            let mut ws_idx = ws_idx;
             let target_mon = &mut monitors[new_idx];
             let workspace_idx = if let Some(static_id) = target_ws_static_id {
                 let physical_idx = target_mon.resolve_workspace_index(static_id);
@@ -3295,6 +3296,11 @@ impl<W: LayoutElement> Layout<W> {
                     != Some(static_id)
                 {
                     target_mon.add_workspace_at(physical_idx, static_id);
+                    // If inserting on the same monitor at or before the source workspace,
+                    // the source workspace index shifts by 1.
+                    if mon_idx == new_idx && physical_idx <= ws_idx {
+                        ws_idx += 1;
+                    }
                 }
                 physical_idx.min(target_mon.workspaces.len() - 1)
             } else {

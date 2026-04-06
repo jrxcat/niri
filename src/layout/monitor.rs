@@ -1001,7 +1001,7 @@ impl<W: LayoutElement> Monitor<W> {
         idx: usize,
         activate: ActivateWindow,
     ) {
-        let source_workspace_idx = if let Some(window) = window {
+        let mut source_workspace_idx = if let Some(window) = window {
             self.workspaces
                 .iter()
                 .position(|ws| ws.has_window(window))
@@ -1013,6 +1013,9 @@ impl<W: LayoutElement> Monitor<W> {
         let new_idx = self.resolve_workspace_index(idx);
         if self.workspaces.get(new_idx).map(|ws| ws.static_id()) != Some(idx) {
             self.add_workspace_at(new_idx, idx);
+            if new_idx <= source_workspace_idx {
+                source_workspace_idx += 1;
+            }
         }
         if new_idx == source_workspace_idx {
             return;
