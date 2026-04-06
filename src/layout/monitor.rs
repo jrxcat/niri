@@ -777,9 +777,10 @@ impl<W: LayoutElement> Monitor<W> {
             self.active_workspace_idx = 0;
         }
 
-        // Update trailing workspace static_id to max_existing + 1, unless it's the active workspace.
+        // Update trailing workspace static_id to max_existing + 1, unless it's the active workspace
+        // or the sentinel (static_id == 0).
         let last_idx = self.workspaces.len() - 1;
-        if self.active_workspace_idx != last_idx {
+        if self.active_workspace_idx != last_idx && self.workspaces[last_idx].static_id() != 0 {
             let max_existing = self.workspaces[..last_idx]
                 .iter()
                 .map(|ws| ws.static_id())
