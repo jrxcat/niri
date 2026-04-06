@@ -541,10 +541,8 @@ impl<W: LayoutElement> Monitor<W> {
     /// cascade forward from index 1 and insert at index 1. Otherwise insert at index 0.
     pub fn add_workspace_top(&mut self) {
         if self.workspaces[0].static_id() == 0 {
-            self.cascade_forward(1, 1);
             self.add_workspace_at(1, 1);
         } else {
-            self.cascade_forward(0, 1);
             self.add_workspace_at(0, 1);
         }
     }
