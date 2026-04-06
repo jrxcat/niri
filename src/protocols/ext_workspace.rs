@@ -91,6 +91,10 @@ pub fn refresh(state: &mut State) {
     // Remove workspaces that no longer exist or should be hidden (sending workspace_leave to workspace groups).
     let mut seen_workspaces = HashMap::new();
     for (mon, ws_idx, ws) in state.niri.layout.workspaces() {
+        // Skip sentinel workspace (static_id = 0).
+        if ws.static_id() == 0 {
+            continue;
+        }
         // Skip trailing empty workspace unless it's the active workspace.
         if mon.is_some_and(|mon| {
             ws_idx == mon.workspace_count() - 1
@@ -141,6 +145,10 @@ pub fn refresh(state: &mut State) {
 
     // Update existing workspaces and create new ones.
     for (mon, ws_idx, ws) in state.niri.layout.workspaces() {
+        // Skip sentinel workspace (static_id = 0).
+        if ws.static_id() == 0 {
+            continue;
+        }
         // Skip trailing empty workspace unless it's the active workspace.
         if mon.is_some_and(|mon| {
             ws_idx == mon.workspace_count() - 1

@@ -604,6 +604,11 @@ impl State {
         let mut seen = HashSet::new();
         let mut need_workspaces_changed = false;
         for (mon, ws_idx, ws) in layout.workspaces() {
+            // Skip sentinel workspace (static_id = 0).
+            if ws.static_id() == 0 {
+                continue;
+            }
+
             let id = ws.id().get();
             seen.insert(id);
 
@@ -667,6 +672,10 @@ impl State {
             let workspaces = layout
                 .workspaces()
                 .filter(|(mon, ws_idx, ws)| {
+                    // Skip sentinel workspace (static_id = 0).
+                    if ws.static_id() == 0 {
+                        return false;
+                    }
                     // Skip trailing empty workspace unless it's the active workspace.
                     !mon.is_some_and(|mon| {
                         *ws_idx == mon.workspace_count() - 1
