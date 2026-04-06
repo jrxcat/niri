@@ -855,6 +855,15 @@ impl<W: LayoutElement> Monitor<W> {
             idx += 1;
         }
 
+        // Cascade BEFORE insertion — array never has duplicate static_ids.
+        if self.has_static_id(ws.static_id()) {
+            if self.can_cascade_backward(ws.static_id()) {
+                self.cascade_backward(idx, ws.static_id());
+            } else {
+                self.cascade_forward(idx, ws.static_id());
+            }
+        }
+
         self.workspaces.insert(idx, ws);
 
         if idx <= self.active_workspace_idx {

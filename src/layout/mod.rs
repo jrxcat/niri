@@ -2885,24 +2885,32 @@ impl<W: LayoutElement> Layout<W> {
                     .unwrap_or(*active_monitor_idx);
                 let mon = &mut monitors[mon_idx];
 
-                // Named workspaces use static_id = 0 as a sentinel (identified by name, not number).
+                // Named workspaces start with static_id = 1; existing workspaces cascade forward.
                 let ws = Workspace::new_with_config(
                     mon.output.clone(),
                     Some(ws_config.clone()),
                     clock,
                     options,
-                    0,
+                    1,
                 );
                 mon.insert_workspace(ws, 0, false);
             }
             MonitorSet::NoOutputs { workspaces } => {
-                // Named workspaces use static_id = 0 as a sentinel.
+                // Named workspaces start with static_id = 1; existing workspaces cascade forward.
                 let ws = Workspace::new_with_config_no_outputs(
                     Some(ws_config.clone()),
                     clock,
                     options,
-                    0,
+                    1,
                 );
+
+                // Cascade existing workspace static_ids forward to avoid collision with static_id=1.
+                for (i, existing) in workspaces.iter_mut().enumerate() {
+                    if existing.static_id() == 1 {
+                        existing.set_static_id(2 + i);
+                    }
+                }
+
                 workspaces.insert(0, ws);
             }
         }
