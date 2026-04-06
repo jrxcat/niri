@@ -777,9 +777,12 @@ impl<W: LayoutElement> Monitor<W> {
             }
         }
 
-        // Special case handling when empty_workspace_above_first is set and all workspaces
-        // are empty.
-        if self.options.layout.empty_workspace_above_first && self.workspaces.len() == 2 {
+        // Special case handling when empty_workspace_above_first is set, the sentinel exists,
+        // and all workspaces are empty.
+        if self.options.layout.empty_workspace_above_first
+            && self.workspaces.len() == 2
+            && self.workspaces[0].static_id() == 0
+        {
             assert!(!self.workspaces[0].has_windows_or_name());
             assert!(!self.workspaces[1].has_windows_or_name());
             self.workspaces.remove(1);
