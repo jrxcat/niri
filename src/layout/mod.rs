@@ -3284,44 +3284,11 @@ impl<W: LayoutElement> Layout<W> {
                 (mon_idx, mon.active_workspace_idx)
             };
 
-            // Resolve static_id to physical Vec index, creating workspace if needed.
-            let mut ws_idx = ws_idx;
-            let target_mon = &mut monitors[new_idx];
-            let workspace_idx = if let Some(static_id) = target_ws_static_id {
-                let physical_idx = target_mon.resolve_workspace_index(static_id);
-                if target_mon
-                    .workspaces
-                    .get(physical_idx)
-                    .map(|ws| ws.static_id())
-                    != Some(static_id)
-                {
-                    target_mon.add_workspace_at(physical_idx, static_id);
-                    // If inserting on the same monitor at or before the source workspace,
-                    // the source workspace index shifts by 1.
-                    if mon_idx == new_idx && physical_idx <= ws_idx {
-                        ws_idx += 1;
-                    }
-                }
-                physical_idx.min(target_mon.workspaces.len() - 1)
-            } else {
-                target_mon.active_workspace_idx
-            };
-            if mon_idx == new_idx && ws_idx == workspace_idx {
-                return;
-            }
-
-            let mon = &monitors[new_idx];
-            if mon.workspaces.len() <= workspace_idx {
-                return;
-            }
-
-            let ws_id = mon.workspaces[workspace_idx].id();
-
-            let mon = &mut monitors[mon_idx];
+            // Extract first while state is pristine.
             let activate = activate.map_smart(|| {
                 window.is_none_or(|win| {
                     mon_idx == *active_monitor_idx
-                        && mon.active_window().map(|win| win.id()) == Some(win)
+                        && monitors[mon_idx].active_window().map(|win| win.id()) == Some(win)
                 })
             });
             let activate = if activate {
@@ -3330,6 +3297,7 @@ impl<W: LayoutElement> Layout<W> {
                 ActivateWindow::No
             };
 
+            let mon = &mut monitors[mon_idx];
             let ws = &mut mon.workspaces[ws_idx];
             let transaction = Transaction::new();
             let mut removed = if let Some(window) = window {
@@ -3342,8 +3310,26 @@ impl<W: LayoutElement> Layout<W> {
 
             removed.tile.stop_move_animations();
 
-            let mon = &mut monitors[new_idx];
-            mon.add_tile(
+            // Resolve target and create workspace if needed.
+            let target_mon = &mut monitors[new_idx];
+            let workspace_idx = if let Some(static_id) = target_ws_static_id {
+                let physical_idx = target_mon.resolve_workspace_index(static_id);
+                if target_mon
+                    .workspaces
+                    .get(physical_idx)
+                    .map(|ws| ws.static_id())
+                    != Some(static_id)
+                {
+                    target_mon.add_workspace_at(physical_idx, static_id);
+                }
+                physical_idx.min(target_mon.workspaces.len() - 1)
+            } else {
+                target_mon.active_workspace_idx
+            };
+
+            let ws_id = target_mon.workspaces[workspace_idx].id();
+
+            target_mon.add_tile(
                 removed.tile,
                 MonitorAddWindowTarget::Workspace {
                     id: ws_id,

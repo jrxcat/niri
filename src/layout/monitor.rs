@@ -1001,7 +1001,7 @@ impl<W: LayoutElement> Monitor<W> {
         idx: usize,
         activate: ActivateWindow,
     ) {
-        let mut source_workspace_idx = if let Some(window) = window {
+        let source_workspace_idx = if let Some(window) = window {
             self.workspaces
                 .iter()
                 .position(|ws| ws.has_window(window))
@@ -1010,22 +1010,11 @@ impl<W: LayoutElement> Monitor<W> {
             self.active_workspace_idx
         };
 
-        let new_idx = self.resolve_workspace_index(idx);
-        if self.workspaces.get(new_idx).map(|ws| ws.static_id()) != Some(idx) {
-            self.add_workspace_at(new_idx, idx);
-            if new_idx <= source_workspace_idx {
-                source_workspace_idx += 1;
-            }
-        }
-        if new_idx == source_workspace_idx {
-            return;
-        }
-        let new_id = self.workspaces[new_idx].id();
-
         let activate = activate.map_smart(|| {
             window.is_none_or(|win| self.active_window().map(|win| win.id()) == Some(win))
         });
 
+        // Extract first while state is pristine.
         let workspace = &mut self.workspaces[source_workspace_idx];
         let transaction = Transaction::new();
         let removed = if let Some(window) = window {
@@ -1035,6 +1024,13 @@ impl<W: LayoutElement> Monitor<W> {
         } else {
             return;
         };
+
+        // Resolve target and create workspace if needed.
+        let new_idx = self.resolve_workspace_index(idx);
+        if self.workspaces.get(new_idx).map(|ws| ws.static_id()) != Some(idx) {
+            self.add_workspace_at(new_idx, idx);
+        }
+        let new_id = self.workspaces[new_idx].id();
 
         self.add_tile(
             removed.tile,
@@ -1103,14 +1099,6 @@ impl<W: LayoutElement> Monitor<W> {
     pub fn move_column_to_workspace(&mut self, idx: usize, activate: bool) {
         let source_workspace_idx = self.active_workspace_idx;
 
-        let new_idx = self.resolve_workspace_index(idx);
-        if self.workspaces.get(new_idx).map(|ws| ws.static_id()) != Some(idx) {
-            self.add_workspace_at(new_idx, idx);
-        }
-        if new_idx == source_workspace_idx {
-            return;
-        }
-
         let workspace = &mut self.workspaces[source_workspace_idx];
         if workspace.floating_is_active() {
             let activate = if activate {
@@ -1125,6 +1113,12 @@ impl<W: LayoutElement> Monitor<W> {
         let Some(column) = workspace.remove_active_column() else {
             return;
         };
+
+        // Resolve target and create workspace if needed.
+        let new_idx = self.resolve_workspace_index(idx);
+        if self.workspaces.get(new_idx).map(|ws| ws.static_id()) != Some(idx) {
+            self.add_workspace_at(new_idx, idx);
+        }
 
         self.add_column(new_idx, column, activate);
     }
