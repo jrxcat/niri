@@ -110,6 +110,13 @@ pub struct Workspace<W: LayoutElement> {
 
     /// Unique ID of this workspace.
     id: WorkspaceId,
+
+    /// Numerical anchor for this workspace.
+    ///
+    /// Every workspace has a permanent static_id starting at 1. This is the
+    /// user-facing identifier that persists across workspace creation/deletion.
+    /// The array is always sorted by static_id.
+    static_id: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -205,8 +212,8 @@ impl FloatingActive {
 }
 
 impl<W: LayoutElement> Workspace<W> {
-    pub fn new(output: Output, clock: Clock, options: Rc<Options>) -> Self {
-        Self::new_with_config(output, None, clock, options)
+    pub fn new(output: Output, clock: Clock, options: Rc<Options>, static_id: usize) -> Self {
+        Self::new_with_config(output, None, clock, options, static_id)
     }
 
     pub fn new_with_config(
@@ -214,6 +221,7 @@ impl<W: LayoutElement> Workspace<W> {
         mut config: Option<WorkspaceConfig>,
         clock: Clock,
         base_options: Rc<Options>,
+        static_id: usize,
     ) -> Self {
         let original_output = config
             .as_ref()
@@ -270,6 +278,7 @@ impl<W: LayoutElement> Workspace<W> {
             name: config.map(|c| c.name.0),
             layout_config,
             id: WorkspaceId::next(),
+            static_id,
         }
     }
 
@@ -277,6 +286,7 @@ impl<W: LayoutElement> Workspace<W> {
         mut config: Option<WorkspaceConfig>,
         clock: Clock,
         base_options: Rc<Options>,
+        static_id: usize,
     ) -> Self {
         let original_output = OutputId(
             config
@@ -334,11 +344,12 @@ impl<W: LayoutElement> Workspace<W> {
             name: config.map(|c| c.name.0),
             layout_config,
             id: WorkspaceId::next(),
+            static_id,
         }
     }
 
-    pub fn new_no_outputs(clock: Clock, options: Rc<Options>) -> Self {
-        Self::new_with_config_no_outputs(None, clock, options)
+    pub fn new_no_outputs(clock: Clock, options: Rc<Options>, static_id: usize) -> Self {
+        Self::new_with_config_no_outputs(None, clock, options, static_id)
     }
 
     pub fn id(&self) -> WorkspaceId {
@@ -351,6 +362,14 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn unname(&mut self) {
         self.name = None;
+    }
+
+    pub fn static_id(&self) -> usize {
+        self.static_id
+    }
+
+    pub fn set_static_id(&mut self, static_id: usize) {
+        self.static_id = static_id;
     }
 
     pub fn has_windows_or_name(&self) -> bool {
