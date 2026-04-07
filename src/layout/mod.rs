@@ -670,8 +670,14 @@ impl<W: LayoutElement> Layout<W> {
         let workspaces = config
             .workspaces
             .iter()
-            .map(|ws| {
-                Workspace::new_with_config_no_outputs(Some(ws.clone()), clock.clone(), opts.clone())
+            .enumerate()
+            .map(|(i, ws)| {
+                Workspace::new_with_config_no_outputs(
+                    Some(ws.clone()),
+                    clock.clone(),
+                    opts.clone(),
+                    i + 1,
+                )
             })
             .collect();
 
@@ -997,6 +1003,7 @@ impl<W: LayoutElement> Layout<W> {
                             workspaces.push(Workspace::new_no_outputs(
                                 self.clock.clone(),
                                 self.options.clone(),
+                                1,
                             ));
                         }
 
@@ -1027,6 +1034,7 @@ impl<W: LayoutElement> Layout<W> {
                                 workspaces.push(Workspace::new_no_outputs(
                                     self.clock.clone(),
                                     self.options.clone(),
+                                    1,
                                 ));
                             }
 
@@ -1127,14 +1135,14 @@ impl<W: LayoutElement> Layout<W> {
                             }
 
                             // Special case handling when empty_workspace_above_first is set and all
-                            // workspaces are empty.
+                            // workspaces are empty. Remove the sentinel to restore the startup state.
                             if mon.options.layout.empty_workspace_above_first
                                 && mon.workspaces.len() == 2
                                 && mon.workspace_switch.is_none()
                             {
                                 assert!(!mon.workspaces[0].has_windows_or_name());
                                 assert!(!mon.workspaces[1].has_windows_or_name());
-                                mon.workspaces.remove(1);
+                                mon.workspaces.remove(0);
                                 mon.active_workspace_idx = 0;
                             }
                             return Some(removed);
@@ -1488,6 +1496,7 @@ impl<W: LayoutElement> Layout<W> {
             for (workspace_idx, ws) in mon.workspaces.iter_mut().enumerate() {
                 if ws.activate_window(window) {
                     *active_monitor_idx = monitor_idx;
+                    let static_id = ws.static_id();
 
                     // If currently in the middle of a vertical swipe between the target workspace
                     // and some other, don't switch the workspace.
@@ -1495,7 +1504,7 @@ impl<W: LayoutElement> Layout<W> {
                         Some(WorkspaceSwitch::Gesture(gesture))
                             if gesture.current_idx.floor() == workspace_idx as f64
                                 || gesture.current_idx.ceil() == workspace_idx as f64 => {}
-                        _ => mon.switch_workspace(workspace_idx),
+                        _ => mon.switch_workspace(static_id),
                     }
 
                     return;
@@ -1524,6 +1533,7 @@ impl<W: LayoutElement> Layout<W> {
             for (workspace_idx, ws) in mon.workspaces.iter_mut().enumerate() {
                 if ws.activate_window_without_raising(window) {
                     *active_monitor_idx = monitor_idx;
+                    let static_id = ws.static_id();
 
                     // If currently in the middle of a vertical swipe between the target workspace
                     // and some other, don't switch the workspace.
@@ -1531,7 +1541,7 @@ impl<W: LayoutElement> Layout<W> {
                         Some(WorkspaceSwitch::Gesture(gesture))
                             if gesture.current_idx.floor() == workspace_idx as f64
                                 || gesture.current_idx.ceil() == workspace_idx as f64 => {}
-                        _ => mon.switch_workspace(workspace_idx),
+                        _ => mon.switch_workspace(static_id),
                     }
 
                     return;
@@ -2875,17 +2885,32 @@ impl<W: LayoutElement> Layout<W> {
                     .unwrap_or(*active_monitor_idx);
                 let mon = &mut monitors[mon_idx];
 
+                // Named workspaces start with static_id = 1; existing workspaces cascade forward.
                 let ws = Workspace::new_with_config(
                     mon.output.clone(),
                     Some(ws_config.clone()),
                     clock,
                     options,
+                    1,
                 );
                 mon.insert_workspace(ws, 0, false);
             }
             MonitorSet::NoOutputs { workspaces } => {
-                let ws =
-                    Workspace::new_with_config_no_outputs(Some(ws_config.clone()), clock, options);
+                // Named workspaces start with static_id = 1; existing workspaces cascade forward.
+                let ws = Workspace::new_with_config_no_outputs(
+                    Some(ws_config.clone()),
+                    clock,
+                    options,
+                    1,
+                );
+
+                // Cascade existing workspace static_ids forward to avoid collision with static_id=1.
+                for (i, existing) in workspaces.iter_mut().enumerate() {
+                    if existing.static_id() == 1 {
+                        existing.set_static_id(2 + i);
+                    }
+                }
+
                 workspaces.insert(0, ws);
             }
         }
@@ -3230,7 +3255,7 @@ impl<W: LayoutElement> Layout<W> {
         &mut self,
         window: Option<&W::Id>,
         output: &Output,
-        target_ws_idx: Option<usize>,
+        target_ws_static_id: Option<usize>,
         activate: ActivateWindow,
     ) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
@@ -3267,23 +3292,11 @@ impl<W: LayoutElement> Layout<W> {
                 (mon_idx, mon.active_workspace_idx)
             };
 
-            let workspace_idx = target_ws_idx.unwrap_or(monitors[new_idx].active_workspace_idx);
-            if mon_idx == new_idx && ws_idx == workspace_idx {
-                return;
-            }
-
-            let mon = &monitors[new_idx];
-            if mon.workspaces.len() <= workspace_idx {
-                return;
-            }
-
-            let ws_id = mon.workspaces[workspace_idx].id();
-
-            let mon = &mut monitors[mon_idx];
+            // Extract first while state is pristine.
             let activate = activate.map_smart(|| {
                 window.is_none_or(|win| {
                     mon_idx == *active_monitor_idx
-                        && mon.active_window().map(|win| win.id()) == Some(win)
+                        && monitors[mon_idx].active_window().map(|win| win.id()) == Some(win)
                 })
             });
             let activate = if activate {
@@ -3292,6 +3305,7 @@ impl<W: LayoutElement> Layout<W> {
                 ActivateWindow::No
             };
 
+            let mon = &mut monitors[mon_idx];
             let ws = &mut mon.workspaces[ws_idx];
             let transaction = Transaction::new();
             let mut removed = if let Some(window) = window {
@@ -3304,8 +3318,26 @@ impl<W: LayoutElement> Layout<W> {
 
             removed.tile.stop_move_animations();
 
-            let mon = &mut monitors[new_idx];
-            mon.add_tile(
+            // Resolve target and create workspace if needed.
+            let target_mon = &mut monitors[new_idx];
+            let workspace_idx = if let Some(static_id) = target_ws_static_id {
+                let physical_idx = target_mon.resolve_workspace_index(static_id);
+                if target_mon
+                    .workspaces
+                    .get(physical_idx)
+                    .map(|ws| ws.static_id())
+                    != Some(static_id)
+                {
+                    target_mon.add_workspace_at(physical_idx, static_id);
+                }
+                physical_idx.min(target_mon.workspaces.len() - 1)
+            } else {
+                target_mon.active_workspace_idx
+            };
+
+            let ws_id = target_mon.workspaces[workspace_idx].id();
+
+            target_mon.add_tile(
                 removed.tile,
                 MonitorAddWindowTarget::Workspace {
                     id: ws_id,
@@ -3331,7 +3363,7 @@ impl<W: LayoutElement> Layout<W> {
     pub fn move_column_to_output(
         &mut self,
         output: &Output,
-        target_ws_idx: Option<usize>,
+        target_ws_static_id: Option<usize>,
         activate: bool,
     ) {
         if let MonitorSet::Normal {
@@ -3357,9 +3389,22 @@ impl<W: LayoutElement> Layout<W> {
                 return;
             };
 
-            let workspace_idx = target_ws_idx
-                .unwrap_or(monitors[new_idx].active_workspace_idx)
-                .min(monitors[new_idx].workspaces.len() - 1);
+            // Resolve static_id to physical Vec index, creating workspace if needed.
+            let target_mon = &mut monitors[new_idx];
+            let workspace_idx = if let Some(static_id) = target_ws_static_id {
+                let physical_idx = target_mon.resolve_workspace_index(static_id);
+                if target_mon
+                    .workspaces
+                    .get(physical_idx)
+                    .map(|ws| ws.static_id())
+                    != Some(static_id)
+                {
+                    target_mon.add_workspace_at(physical_idx, static_id);
+                }
+                physical_idx.min(target_mon.workspaces.len() - 1)
+            } else {
+                target_mon.active_workspace_idx
+            };
             self.add_column_by_idx(new_idx, workspace_idx, column, activate);
         }
     }
@@ -4175,7 +4220,12 @@ impl<W: LayoutElement> Layout<W> {
                             // Reuse the bottom empty workspace.
                             mon.workspaces.len() - 1
                         } else {
-                            mon.add_workspace_at(ws_idx);
+                            let new_static_id = if ws_idx > 0 {
+                                mon.workspaces[ws_idx - 1].static_id() + 1
+                            } else {
+                                1
+                            };
+                            mon.add_workspace_at(ws_idx, new_static_id);
                             ws_idx
                         }
                     }
@@ -4273,6 +4323,7 @@ impl<W: LayoutElement> Layout<W> {
                     workspaces.push(Workspace::new_no_outputs(
                         self.clock.clone(),
                         self.options.clone(),
+                        1,
                     ));
                 }
                 let ws = &mut workspaces[0];
@@ -4502,7 +4553,7 @@ impl<W: LayoutElement> Layout<W> {
                     .first()
                     .is_some_and(|first| first.id() == wsid)
             {
-                monitor.add_workspace_top();
+                monitor.add_workspace_at(0, 0);
             }
             if monitor
                 .workspaces
