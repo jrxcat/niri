@@ -759,7 +759,9 @@ impl<W: LayoutElement> Monitor<W> {
     pub fn clean_up_workspaces(&mut self) {
         assert!(self.workspace_switch.is_none());
 
-        let range_start = if self.options.layout.empty_workspace_above_first {
+        let range_start = if self.options.layout.empty_workspace_above_first
+            && self.workspaces.first().is_some_and(|ws| ws.static_id() == 0)
+        {
             1
         } else {
             0
