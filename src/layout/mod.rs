@@ -1135,14 +1135,14 @@ impl<W: LayoutElement> Layout<W> {
                             }
 
                             // Special case handling when empty_workspace_above_first is set and all
-                            // workspaces are empty.
+                            // workspaces are empty. Remove the sentinel to restore the startup state.
                             if mon.options.layout.empty_workspace_above_first
                                 && mon.workspaces.len() == 2
                                 && mon.workspace_switch.is_none()
                             {
                                 assert!(!mon.workspaces[0].has_windows_or_name());
                                 assert!(!mon.workspaces[1].has_windows_or_name());
-                                mon.workspaces.remove(1);
+                                mon.workspaces.remove(0);
                                 mon.active_workspace_idx = 0;
                             }
                             return Some(removed);
