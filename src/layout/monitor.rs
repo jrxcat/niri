@@ -421,12 +421,9 @@ impl<W: LayoutElement> Monitor<W> {
 
     /// Resolve a logical workspace number to a physical Vec index.
     ///
-    /// Resolve a logical workspace number to a physical Vec index.
-    ///
     /// Side-effect-free: returns the index where the workspace with the given
     /// static_id exists, or where it should be inserted.
     pub fn resolve_workspace_index(&self, requested: usize) -> usize {
-        // Step 1: Search for existing workspace with matching static_id
         if let Some(pos) = self
             .workspaces
             .iter()
@@ -435,7 +432,6 @@ impl<W: LayoutElement> Monitor<W> {
             return pos;
         }
 
-        // Step 2: Find workspace with largest static_id < requested
         let insert_after_idx = self
             .workspaces
             .iter()
@@ -484,9 +480,7 @@ impl<W: LayoutElement> Monitor<W> {
 
     /// Check if backward cascade is possible for the given target_id.
     ///
-    /// Backward cascade fails if any workspace at index i has static_id <= i,
-    /// or if the first workspace already has static_id == target_id (no room
-    /// to cascade it backward).
+    /// TODO something faster
     fn can_cascade_backward(&self, target_id: usize) -> bool {
         if self
             .workspaces
@@ -507,16 +501,12 @@ impl<W: LayoutElement> Monitor<W> {
         true
     }
 
-    /// Check if a workspace with the given static_id already exists.
     fn has_static_id(&self, static_id: usize) -> bool {
         self.workspaces.iter().any(|ws| ws.static_id() == static_id)
     }
 
-    /// Insert a new workspace at the given index with the given static_id.
-    ///
-    /// Cascades existing workspaces BEFORE insertion to avoid duplicate static_ids.
+    // Insert a new workspace at the given index with the given static_id.
     pub fn add_workspace_at(&mut self, idx: usize, new_static_id: usize) {
-        // Cascade BEFORE insertion — array never has duplicate static_ids.
         if self.has_static_id(new_static_id) {
             if self.can_cascade_backward(new_static_id) {
                 self.cascade_backward(idx, new_static_id);
@@ -544,10 +534,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
-    /// Insert a new empty workspace at the top (index 0).
-    ///
-    /// Always gets static_id = 1. If a sentinel (static_id = 0) exists at index 0,
-    /// cascade forward from index 1 and insert at index 1. Otherwise insert at index 0.
+    // Insert a new empty workspace at the top (index 0).
     pub fn add_workspace_top(&mut self) {
         if self.workspaces[0].static_id() == 0 {
             self.add_workspace_at(1, 1);
@@ -556,9 +543,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
-    /// Insert a new empty workspace at the bottom (end of array).
-    ///
-    /// Gets static_id = last.static_id + 1. No cascade needed — always a new max.
+    // Insert a new empty workspace at the bottom (end of array).
     pub fn add_workspace_bottom(&mut self) {
         let new_static_id = self.workspaces.last().unwrap().static_id() + 1;
         self.add_workspace_at(self.workspaces.len(), new_static_id);
@@ -860,7 +845,6 @@ impl<W: LayoutElement> Monitor<W> {
             idx += 1;
         }
 
-        // Cascade BEFORE insertion — array never has duplicate static_ids.
         if self.has_static_id(ws.static_id()) {
             if self.can_cascade_backward(ws.static_id()) {
                 self.cascade_backward(idx, ws.static_id());
@@ -1041,7 +1025,6 @@ impl<W: LayoutElement> Monitor<W> {
             window.is_none_or(|win| self.active_window().map(|win| win.id()) == Some(win))
         });
 
-        // Extract first while state is pristine.
         let workspace = &mut self.workspaces[source_workspace_idx];
         let transaction = Transaction::new();
         let removed = if let Some(window) = window {
@@ -1052,7 +1035,6 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         };
 
-        // Resolve target and create workspace if needed.
         let new_idx = self.resolve_workspace_index(idx);
         if self.workspaces.get(new_idx).map(|ws| ws.static_id()) != Some(idx) {
             self.add_workspace_at(new_idx, idx);
@@ -1141,7 +1123,6 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         };
 
-        // Resolve target and create workspace if needed.
         let new_idx = self.resolve_workspace_index(idx);
         if self.workspaces.get(new_idx).map(|ws| ws.static_id()) != Some(idx) {
             self.add_workspace_at(new_idx, idx);
