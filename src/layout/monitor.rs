@@ -1429,6 +1429,12 @@ impl<W: LayoutElement> Monitor<W> {
 
         self.workspaces.swap(self.active_workspace_idx, new_idx);
 
+        // Swap static_ids to keep them ordered after the workspace swap.
+        let a_id = self.workspaces[self.active_workspace_idx].static_id();
+        let b_id = self.workspaces[new_idx].static_id();
+        self.workspaces[self.active_workspace_idx].set_static_id(b_id);
+        self.workspaces[new_idx].set_static_id(a_id);
+
         if new_idx == self.workspaces.len() - 1 {
             // Insert a new empty workspace.
             self.add_workspace_bottom();
@@ -1454,6 +1460,12 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         self.workspaces.swap(self.active_workspace_idx, new_idx);
+
+        // Swap static_ids to keep them ordered after the workspace swap.
+        let a_id = self.workspaces[self.active_workspace_idx].static_id();
+        let b_id = self.workspaces[new_idx].static_id();
+        self.workspaces[self.active_workspace_idx].set_static_id(b_id);
+        self.workspaces[new_idx].set_static_id(a_id);
 
         if self.active_workspace_idx == self.workspaces.len() - 1 {
             // Insert a new empty workspace.
