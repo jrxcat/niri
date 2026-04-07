@@ -604,6 +604,11 @@ impl State {
         let mut seen = HashSet::new();
         let mut need_workspaces_changed = false;
         for (mon, ws_idx, ws) in layout.workspaces() {
+            // Skip sentinel workspace (static_id = 0).
+            if ws.static_id() == 0 {
+                continue;
+            }
+
             let id = ws.id().get();
             seen.insert(id);
 
@@ -615,9 +620,14 @@ impl State {
 
             // Check for any changes that we can't signal as individual events.
             let output_name = mon.map(|mon| mon.output_name());
+            let expected_name = ws
+                .name()
+                .cloned()
+                .unwrap_or_else(|| ws.static_id().to_string());
             if ipc_ws.idx != u8::try_from(ws_idx + 1).unwrap_or(u8::MAX)
-                || ipc_ws.name.as_ref() != ws.name()
+                || ipc_ws.name.as_deref() != Some(&expected_name)
                 || ipc_ws.output.as_ref() != output_name
+                || ipc_ws.static_id != ws.static_id()
             {
                 need_workspaces_changed = true;
                 break;
@@ -661,17 +671,34 @@ impl State {
 
             let workspaces = layout
                 .workspaces()
+                .filter(|(mon, ws_idx, ws)| {
+                    // Skip sentinel workspace (static_id = 0).
+                    if ws.static_id() == 0 {
+                        return false;
+                    }
+                    // Skip trailing empty workspace unless it's the active workspace.
+                    !mon.is_some_and(|mon| {
+                        *ws_idx == mon.workspace_count() - 1
+                            && !ws.has_windows_or_name()
+                            && mon.active_workspace_idx() != *ws_idx
+                    })
+                })
                 .map(|(mon, ws_idx, ws)| {
                     let id = ws.id().get();
+                    let name = ws
+                        .name()
+                        .cloned()
+                        .unwrap_or_else(|| ws.static_id().to_string());
                     Workspace {
                         id,
                         idx: u8::try_from(ws_idx + 1).unwrap_or(u8::MAX),
-                        name: ws.name().cloned(),
+                        name: Some(name),
                         output: mon.map(|mon| mon.output_name().clone()),
                         is_urgent: ws.is_urgent(),
                         is_active: mon.is_some_and(|mon| mon.active_workspace_idx() == ws_idx),
                         is_focused: Some(id) == focused_ws_id,
                         active_window_id: ws.active_window().map(|win| win.id().get()),
+                        static_id: ws.static_id(),
                     }
                 })
                 .collect();

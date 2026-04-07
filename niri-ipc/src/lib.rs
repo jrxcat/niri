@@ -1416,8 +1416,6 @@ pub struct Workspace {
     pub id: u64,
     /// Index of the workspace on its monitor.
     ///
-    /// This is the same index you can use for requests like `niri msg action focus-workspace`.
-    ///
     /// This index *will change* as you move and re-order workspace. It is merely the workspace's
     /// current position on its monitor. Workspaces on different monitors can have the same index.
     ///
@@ -1441,6 +1439,12 @@ pub struct Workspace {
     pub is_focused: bool,
     /// Id of the active window on this workspace, if any.
     pub active_window_id: Option<u64>,
+    /// Numerical anchor of this workspace.
+    ///
+    /// Every workspace has a permanent static_id starting at 1. This value
+    /// remains constant even if the workspace's physical position changes
+    /// due to dynamic workspace creation/removal.
+    pub static_id: usize,
 }
 
 /// Configured keyboard layouts.
